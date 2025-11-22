@@ -5,12 +5,16 @@
 
 struct string *string_create(const char *str, size_t size)
 {
-    if (!str)
-        return NULL;
-
     struct string *res = malloc(sizeof(struct string));
     if (!res)
         return NULL;
+
+    if (!str || size == 0)
+    {
+        res->data = NULL;
+        res->size = 0;
+        return res;
+    }
 
     res->data = malloc(size);
     if (!res->data)

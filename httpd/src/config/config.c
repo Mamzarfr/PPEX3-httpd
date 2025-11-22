@@ -88,6 +88,9 @@ static int valid(struct config *cfg, struct server_config *scfg)
     if (!scfg->default_file)
         scfg->default_file = strdup("index.html");
 
+    if (cfg->daemon != NO_OPTION && !cfg->log_file)
+        cfg->log_file = strdup("HTTPd.log");
+
     if (!cfg->pid_file || !scfg->server_name || !scfg->port || !scfg->ip
         || !scfg->root_dir || !scfg->default_file)
         return -1;
