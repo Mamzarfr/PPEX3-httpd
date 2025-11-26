@@ -1,0 +1,7 @@
+*.pdf
+.venv/
+__pycache__/
+obj/
+test_root/
+*.sh
+*.tar.gz
