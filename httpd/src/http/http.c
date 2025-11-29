@@ -13,6 +13,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../config/config.h"
+#include "../logger/logger.h"
+#include "../utils/string/string.h"
+
 #define BUF_SIZE 4096
 #define BUF_SIZE_SMALL 128
 
@@ -106,7 +110,7 @@ static int parse_req(char *buffer, struct req *req)
     return 0;
 }
 
-static void get_http_date(char *buf)
+static void get_date(char *buf)
 {
     time_t t = time(NULL);
     struct tm *gmt = gmtime(&t);
@@ -117,7 +121,7 @@ static void send_full(int fd, const char *status, const char *body,
                       ssize_t body_len)
 {
     char date[BUF_SIZE_SMALL];
-    get_http_date(date);
+    get_date(date);
 
     char header[BUF_SIZE];
     int n = snprintf(header, BUF_SIZE,
@@ -176,7 +180,91 @@ static char *read_file(const char *path, ssize_t *out_size)
     return buf;
 }
 
-void http_handle_request(int client_fd, struct config *cfg)
+static int helper_req(struct req *req, struct config *cfg, int client_fd,
+                      const char *client_ip)
+{
+    if (!req->host)
+    {
+        log_req(cfg->servers->server_name->data, req->method, req->path,
+                client_ip);
+        log_resp(cfg->servers->server_name->data, 400, client_ip, req);
+        send_full(client_fd, "400 Bad Request", NULL, 0);
+        return -1;
+    }
+
+    if (strcmp(req->version, "HTTP/1.1") != 0)
+    {
+        log_req(cfg->servers->server_name->data, req->method, req->path,
+                client_ip);
+        log_resp(cfg->servers->server_name->data, 505, client_ip, req);
+        send_full(client_fd, "505 HTTP Version Not Supported", NULL, 0);
+        return -1;
+    }
+
+    if (strcmp(req->method, "GET") != 0 && strcmp(req->method, "HEAD") != 0)
+    {
+        log_req(cfg->servers->server_name->data, req->method, req->path,
+                client_ip);
+        log_resp(cfg->servers->server_name->data, 405, client_ip, req);
+        send_full(client_fd, "405 Method Not Allowed", NULL, 0);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void makepath(const char *req_path, const char *root_dir,
+                     const char *default_file, char *path_buffer)
+{
+    size_t len = strlen(req_path);
+
+    if (len > 0 && req_path[len - 1] == '/')
+    {
+        snprintf(path_buffer, BUF_SIZE_SMALL, "%s%s%s", root_dir, req_path,
+                 default_file);
+    }
+    else
+    {
+        snprintf(path_buffer, BUF_SIZE_SMALL, "%s%s", root_dir, req_path);
+    }
+}
+
+static void send_resp(int client_fd, struct config *cfg, struct req *req,
+                      const char *client_ip)
+{
+    char path[BUF_SIZE_SMALL];
+    makepath(req->path, cfg->servers->root_dir, cfg->servers->default_file,
+             path);
+
+    ssize_t size;
+    char *body = read_file(path, &size);
+
+    if (!body)
+    {
+        if (errno == EACCES)
+        {
+            log_resp(cfg->servers->server_name->data, 403, client_ip, req);
+            send_full(client_fd, "403 Forbidden", NULL, 0);
+        }
+        else
+        {
+            log_resp(cfg->servers->server_name->data, 404, client_ip, req);
+            send_full(client_fd, "404 Not Found", NULL, 0);
+        }
+    }
+    else
+    {
+        log_resp(cfg->servers->server_name->data, 200, client_ip, req);
+        if (strcmp(req->method, "HEAD") == 0)
+            send_full(client_fd, "200 OK", NULL, size);
+        else
+            send_full(client_fd, "200 OK", body, size);
+        free(body);
+    }
+}
+
+void http_handle_request(int client_fd, struct config *cfg,
+                         const char *client_ip)
 {
     char buffer[BUF_SIZE];
     ssize_t bytes = recv(client_fd, buffer, BUF_SIZE - 1, 0);
@@ -192,64 +280,22 @@ void http_handle_request(int client_fd, struct config *cfg)
 
     if (parse_req(buffer, req) != 0)
     {
+        log_req(cfg->servers->server_name->data, NULL, NULL, client_ip);
+        log_resp(cfg->servers->server_name->data, 400, client_ip, NULL);
         send_full(client_fd, "400 Bad Request", NULL, 0);
         free_request(req);
         return;
     }
 
-    if (!req->host)
+    if (helper_req(req, cfg, client_fd, client_ip) != 0)
     {
-        send_full(client_fd, "400 Bad Request", NULL, 0);
         free_request(req);
         return;
     }
 
-    if (strcmp(req->version, "HTTP/1.1") != 0)
-    {
-        send_full(client_fd, "505 HTTP Version Not Supported", NULL, 0);
-        free_request(req);
-        return;
-    }
+    log_req(cfg->servers->server_name->data, req->method, req->path, client_ip);
 
-    if (strcmp(req->method, "GET") != 0 && strcmp(req->method, "HEAD") != 0)
-    {
-        send_full(client_fd, "405 Method Not Allowed", NULL, 0);
-        free_request(req);
-        return;
-    }
-
-    char path[BUF_SIZE_SMALL];
-    size_t len = strlen(req->path);
-
-    if (len > 0 && req->path[len - 1] == '/')
-    {
-        snprintf(path, BUF_SIZE_SMALL, "%s%s%s", cfg->servers->root_dir,
-                 req->path, cfg->servers->default_file);
-    }
-    else
-    {
-        snprintf(path, BUF_SIZE_SMALL, "%s%s", cfg->servers->root_dir,
-                 req->path);
-    }
-
-    ssize_t size;
-    char *body = read_file(path, &size);
-
-    if (!body)
-    {
-        if (errno == EACCES)
-            send_full(client_fd, "403 Forbidden", NULL, 0);
-        else
-            send_full(client_fd, "404 Not Found", NULL, 0);
-    }
-    else
-    {
-        if (strcmp(req->method, "HEAD") == 0)
-            send_full(client_fd, "200 OK", NULL, size);
-        else
-            send_full(client_fd, "200 OK", body, size);
-        free(body);
-    }
+    send_resp(client_fd, cfg, req, client_ip);
 
     free_request(req);
 }

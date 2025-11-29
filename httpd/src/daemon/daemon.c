@@ -10,6 +10,21 @@
 
 int daemon_start(const char *pid_file)
 {
+    FILE *f = fopen(pid_file, "r");
+    if (f)
+    {
+        pid_t tmppid;
+        if (fscanf(f, "%d", &tmppid) == 1)
+        {
+            if (kill(tmppid, 0) == 0)
+            {
+                fclose(f);
+                return -1;
+            }
+        }
+        fclose(f);
+    }
+
     pid_t pid = fork();
     if (pid == -1)
         return -1;
@@ -17,25 +32,7 @@ int daemon_start(const char *pid_file)
     if (pid > 0)
         exit(0);
 
-    if (setsid() == -1)
-        return -1;
-
-    pid = fork();
-
-    if (pid > 0)
-        exit(0);
-
-    int fd = open("/dev/null", O_RDWR);
-    if (fd != -1)
-    {
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        if (fd > 2)
-            close(fd);
-    }
-
-    FILE *f = fopen(pid_file, "w");
+    f = fopen(pid_file, "w");
     if (f)
     {
         fprintf(f, "%d\n", getpid());
@@ -48,19 +45,15 @@ int daemon_start(const char *pid_file)
 int daemon_stop(const char *pid_file)
 {
     FILE *f = fopen(pid_file, "r");
-    if (!f)
-        return -1;
-
-    pid_t pid;
-    if (fscanf(f, "%d", &pid) != 1)
+    if (f)
     {
+        pid_t pid;
+        if (fscanf(f, "%d", &pid) == 1)
+        {
+            kill(pid, SIGINT);
+        }
         fclose(f);
-        return -1;
     }
-    fclose(f);
-
-    if (kill(pid, SIGTERM) == -1)
-        return -1;
 
     remove(pid_file);
     return 0;

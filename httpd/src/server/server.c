@@ -2,13 +2,26 @@
 
 #include "server.h"
 
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include "../http/http.h"
+
+static volatile int sigint = 0;
+
+static void sigint_handler(int useless)
+{
+    if (useless)
+        sigint = 1;
+    else
+        sigint = 1;
+}
 
 int server_create_and_bind(const char *ip, const char *port)
 {
@@ -21,7 +34,7 @@ int server_create_and_bind(const char *ip, const char *port)
 
     if (getaddrinfo(ip, port, &hints, &res) == -1)
     {
-        fprintf(stderr, "create_and_bind: failed getaddrinfo\n");
+        fprintf(stderr, "failed getaddrinfo\n");
         return -1;
     }
 
@@ -49,18 +62,29 @@ int server_create_and_bind(const char *ip, const char *port)
 
 void server_start(int server_socket, struct config *cfg)
 {
+    struct sigaction sa;
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+
     if (listen(server_socket, SOMAXCONN) == -1)
         return;
 
-    while (1)
+    while (!sigint)
     {
-        int cfd = accept(server_socket, NULL, NULL);
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int cfd =
+            accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
         if (cfd != -1)
         {
-            fprintf(stderr, "Client connected\n");
-            http_handle_request(cfd, cfg);
+            char client_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr, client_ip,
+                      sizeof(client_ip));
+
+            http_handle_request(cfd, cfg, client_ip);
             close(cfd);
-            fprintf(stderr, "Client disconnected\n");
         }
     }
 }

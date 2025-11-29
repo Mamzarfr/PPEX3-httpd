@@ -11,6 +11,7 @@ struct req
     char *host;
 };
 
-void http_handle_request(int client_fd, struct config *cfg);
+void http_handle_request(int client_fd, struct config *cfg,
+                         const char *client_ip);
 
 #endif // HTTP_H
