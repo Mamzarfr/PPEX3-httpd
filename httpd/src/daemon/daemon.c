@@ -30,7 +30,7 @@ int daemon_start(const char *pid_file)
         return -1;
 
     if (pid > 0)
-        exit(0);
+        _exit(0);
 
     f = fopen(pid_file, "w");
     if (f)

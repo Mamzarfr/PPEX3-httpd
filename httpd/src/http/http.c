@@ -30,7 +30,6 @@ static void send_response(int fd, const char *data, ssize_t len)
         sent = write(fd, data + total, len - total);
         if (sent == -1)
         {
-            fprintf(stderr, "Send error\n");
             return;
         }
         total += sent;

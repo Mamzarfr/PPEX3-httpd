@@ -34,7 +34,6 @@ int server_create_and_bind(const char *ip, const char *port)
 
     if (getaddrinfo(ip, port, &hints, &res) == -1)
     {
-        fprintf(stderr, "failed getaddrinfo\n");
         return -1;
     }
 
