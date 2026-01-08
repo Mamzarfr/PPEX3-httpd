@@ -16,7 +16,7 @@ struct string *string_create(const char *str, size_t size)
         return res;
     }
 
-    res->data = malloc(size);
+    res->data = malloc(size + 1);
     if (!res->data)
     {
         free(res);
@@ -24,6 +24,7 @@ struct string *string_create(const char *str, size_t size)
     }
 
     memcpy(res->data, str, size);
+    res->data[size] = '\0';
     res->size = size;
 
     return res;
@@ -44,11 +45,12 @@ void string_concat_str(struct string *str, const char *to_concat, size_t size)
         return;
 
     size_t fullsize = str->size + size;
-    char *tmp = realloc(str->data, fullsize);
+    char *tmp = realloc(str->data, fullsize + 1);
     if (!tmp)
         return;
 
     memcpy(tmp + str->size, to_concat, size);
+    tmp[fullsize] = '\0';
     str->data = tmp;
     str->size = fullsize;
 }
